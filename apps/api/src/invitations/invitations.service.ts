@@ -427,16 +427,6 @@ export class InvitationsService {
     throw new ForbiddenException('Недостаточно прав для приглашений');
   }
 
-  private async assertOwner(userId: string, familyId: string) {
-    const family = await this.prisma.family.findUnique({ where: { id: familyId } });
-    if (!family) {
-      throw new NotFoundException('Семейная группа не найдена');
-    }
-    if (family.ownerId !== userId) {
-      throw new ForbiddenException('Только организатор может управлять приглашениями');
-    }
-  }
-
   private publicPreview(invitation: {
     token: string;
     code: string;
