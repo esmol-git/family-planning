@@ -244,18 +244,20 @@ defineExpose({ load });
           <span v-if="row.targetMemberId" class="muted"> · в списке</span>
         </template>
       </el-table-column>
-      <el-table-column label="Статус" min-width="160">
+      <el-table-column label="Статус" width="100">
         <template #default="{ row }">
-          <template v-if="row.status === 'pending'">
-            <el-button
-              link
-              type="primary"
-              @click="copy(`${inviteBase}${row.invitePath}`, 'Ссылка')"
-            >
-              Копировать ссылку
-            </el-button>
-          </template>
-          <span v-else class="muted">{{ STATUS_LABEL[row.status] ?? row.status }}</span>
+          <span class="muted">{{ STATUS_LABEL[row.status] ?? row.status }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="Ссылка" min-width="160">
+        <template #default="{ row }">
+          <el-button
+            link
+            type="primary"
+            @click="copy(`${inviteBase}${row.invitePath}`, 'Ссылка')"
+          >
+            Копировать
+          </el-button>
         </template>
       </el-table-column>
       <el-table-column label="" width="100" align="right">
