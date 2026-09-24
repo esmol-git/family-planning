@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage } from 'element-plus';
 import { useAuthStore } from '../stores/auth';
 import { ApiError } from '../api/client';
@@ -8,14 +9,29 @@ import { ApiError } from '../api/client';
 const auth = useAuthStore();
 const route = useRoute();
 const router = useRouter();
-const login = ref('');
-const password = ref('');
+const formRef = ref<FormInstance>();
 const loading = ref(false);
 
+const form = reactive({
+  login: '',
+  password: '',
+});
+
+const rules: FormRules = {
+  login: [{ required: true, message: 'Укажите логин или email', trigger: 'blur' }],
+  password: [
+    { required: true, message: 'Укажите пароль', trigger: 'blur' },
+    { min: 6, message: 'Не короче 6 символов', trigger: 'blur' },
+  ],
+};
+
 async function submit() {
+  const ok = await formRef.value?.validate().catch(() => false);
+  if (!ok) return;
+
   loading.value = true;
   try {
-    await auth.login(login.value, password.value);
+    await auth.login(form.login.trim(), form.password);
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '';
     if (redirect.startsWith('/') && !redirect.startsWith('//')) {
       await router.replace(redirect);
@@ -38,44 +54,48 @@ async function submit() {
       <h1>Вход</h1>
       <p class="lead">Общий календарь семьи с проверкой пересечений</p>
 
-      <el-form label-position="top" size="large" @submit.prevent="submit">
-        <el-form-item label="Логин">
-          <el-input v-model="login" autocomplete="username" placeholder="Логин или email" />
-        </el-form-item>
-        <el-form-item label="Пароль">
+      <el-form
+        ref="formRef"
+        :model="form"
+        :rules="rules"
+        label-position="top"
+        size="large"
+        require-asterisk-position="right"
+        @submit.prevent="submit"
+      >
+        <el-form-item label="Логин" prop="login">
           <el-input
-            v-model="password"
+            v-model="form.login"
+            autocomplete="username"
+            clearable
+          />
+        </el-form-item>
+        <el-form-item label="Пароль" prop="password">
+          <el-input
+            v-model="form.password"
             type="password"
             show-password
             autocomplete="current-password"
           />
         </el-form-item>
+
         <p class="auth-forgot">
           <a href="#" @click.prevent="router.push('/forgot-password')">Забыли пароль?</a>
         </p>
-        <el-space wrap :size="12" style="margin-top: 0.25rem">
+
+        <div class="auth-actions">
           <el-button type="primary" native-type="submit" :loading="loading" size="large">
             Войти
           </el-button>
-          <el-button size="large" @click="router.push({ name: 'register', query: route.query })">
+          <el-button
+            size="large"
+            :disabled="loading"
+            @click="router.push({ name: 'register', query: route.query })"
+          >
             Регистрация
           </el-button>
-        </el-space>
+        </div>
       </el-form>
     </el-card>
   </div>
 </template>
-
-<style scoped>
-.auth-forgot {
-  margin: -0.35rem 0 0.85rem;
-  font-size: 0.9rem;
-}
-.auth-forgot a {
-  color: var(--accent);
-  text-decoration: none;
-}
-.auth-forgot a:hover {
-  text-decoration: underline;
-}
-</style>
