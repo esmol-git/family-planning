@@ -31,7 +31,11 @@ export class FamilyEditorGuard implements CanActivate {
       return true;
     }
 
-    if (member && (member.type === MemberType.adult || member.type === MemberType.owner)) {
+    if (
+      member &&
+      member.type !== MemberType.helper &&
+      member.type !== MemberType.child
+    ) {
       return true;
     }
 

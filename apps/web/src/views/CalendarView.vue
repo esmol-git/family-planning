@@ -579,22 +579,22 @@ function onMoreCommand(cmd: string) {
     showFamilySettings.value = true;
   }
   if (cmd === 'member') {
-    if (!isOwner.value) {
-      ElMessage.warning('Участников может добавлять только организатор');
+    if (!canEdit.value) {
+      ElMessage.warning('Недостаточно прав');
       return;
     }
     showMemberForm.value = true;
   }
   if (cmd === 'categories') {
-    if (!isOwner.value) {
-      ElMessage.warning('Категории настраивает организатор');
+    if (!canEdit.value) {
+      ElMessage.warning('Недостаточно прав');
       return;
     }
     showCategoriesModal.value = true;
   }
   if (cmd === 'invites') {
-    if (!isOwner.value) {
-      ElMessage.warning('Приглашения создаёт организатор');
+    if (!canEdit.value) {
+      ElMessage.warning('Недостаточно прав');
       return;
     }
     showInvitesModal.value = true;
@@ -703,9 +703,9 @@ function logout() {
           </el-button>
           <template #dropdown>
             <el-dropdown-menu class="more-menu">
-              <template v-if="isOwner">
+              <template v-if="canEdit">
                 <div class="more-menu__label">Семья</div>
-                <el-dropdown-item command="settings">
+                <el-dropdown-item v-if="isOwner" command="settings">
                   <span class="more-menu__item">
                     <span class="more-menu__icon" aria-hidden="true">
                       <el-icon :size="18"><Setting /></el-icon>
@@ -969,7 +969,7 @@ function logout() {
           <div class="panel__head">
             <h2 class="panel__title">Категории</h2>
             <el-button
-              v-if="isOwner"
+              v-if="canEdit"
               link
               type="primary"
               @click="showCategoriesModal = true"

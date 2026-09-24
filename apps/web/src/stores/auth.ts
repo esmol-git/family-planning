@@ -34,13 +34,16 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthenticated = computed(() => !!user.value);
 
-  /** Владелец семьи или взрослый — может менять события/настройки; helper — только смотреть */
+  /** Редактирование: все кроме helper/child. Владелец — всегда. */
   function canEditFamily(familyId: string | undefined | null, ownerId?: string | null) {
     if (!user.value || !familyId) return false;
     if (ownerId && user.value.id === ownerId) return true;
     const membership = user.value.memberships?.find((m) => m.familyId === familyId);
-    if (!membership) return false;
-    return membership.type === 'owner' || membership.type === 'adult';
+    if (membership) {
+      return membership.type !== 'helper' && membership.type !== 'child';
+    }
+    // Есть доступ к семье, тип ещё не известен (старая сессия) — не режем взрослых
+    return (user.value.families ?? []).some((f) => f.id === familyId);
   }
 
   function applyAuth(res: AuthResponse) {
