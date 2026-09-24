@@ -180,5 +180,5 @@ rsync -avz --exclude node_modules --exclude .git --exclude '**/.env' --exclude a
 //не стирать
 37M7WgTjWM@iuMn
 ssh root@46.8.237.129
-
+ssh root@166.1.2.199
 TWQMP6dn2z.7V_w
