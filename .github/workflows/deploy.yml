@@ -61,7 +61,9 @@ jobs:
           script: |
             set -e
             cd /opt/family-calendar
+            echo 'dangerouslyAllowAllBuilds=true' > .npmrc
             pnpm install --frozen-lockfile
+            pnpm rebuild bcrypt @prisma/client prisma
             cd apps/api
             pnpm exec prisma generate
             pnpm exec prisma migrate deploy
