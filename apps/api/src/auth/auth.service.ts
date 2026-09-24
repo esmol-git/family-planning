@@ -116,7 +116,9 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { email } });
     const generic = {
       ok: true,
-      message: 'Если аккаунт с этим email существует, ссылка для сброса будет в логе сервера',
+      message: this.mail.isConfigured
+        ? 'Если аккаунт с этим email существует, мы отправили ссылку для сброса пароля'
+        : 'Если аккаунт с этим email существует, ссылка для сброса будет в логе сервера',
     };
 
     if (!user || !user.email) {
@@ -148,10 +150,14 @@ export class AuthService {
     await this.mail.sendPasswordReset(user.email, resetUrl);
 
     const isProd = this.config.get<string>('NODE_ENV') === 'production';
+    const message = this.mail.isConfigured
+      ? 'Если аккаунт с этим email существует, мы отправили ссылку для сброса пароля'
+      : 'Если аккаунт с этим email существует, ссылка для сброса будет в логе сервера';
+
     if (!isProd) {
-      return { ...generic, devResetUrl: resetUrl };
+      return { ok: true, message, devResetUrl: resetUrl };
     }
-    return generic;
+    return { ok: true, message };
   }
 
   async resetPassword(dto: ResetPasswordDto) {
@@ -251,6 +257,12 @@ export class AuthService {
       email: user.email,
       name: user.name,
       families: Array.from(familiesMap.values()),
+      memberships: user.members.map((m) => ({
+        familyId: m.familyId,
+        memberId: m.id,
+        type: m.type,
+        relation: m.relation,
+      })),
     };
   }
 

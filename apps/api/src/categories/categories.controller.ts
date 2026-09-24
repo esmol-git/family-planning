@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { CategoriesService } from './categories.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
 import { FamilyAccessGuard } from '../common/guards/family-access.guard';
+import { FamilyEditorGuard } from '../common/guards/family-editor.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 
@@ -22,6 +23,7 @@ export class CategoriesController {
     return this.categoriesService.list(familyId, includeInactive === 'true');
   }
 
+  @UseGuards(FamilyEditorGuard)
   @Post()
   create(
     @CurrentUser() user: AuthUser,
@@ -31,6 +33,7 @@ export class CategoriesController {
     return this.categoriesService.create(user.userId, familyId, dto);
   }
 
+  @UseGuards(FamilyEditorGuard)
   @Patch(':categoryId')
   update(
     @CurrentUser() user: AuthUser,
@@ -41,6 +44,7 @@ export class CategoriesController {
     return this.categoriesService.update(user.userId, familyId, categoryId, dto);
   }
 
+  @UseGuards(FamilyEditorGuard)
   @Delete(':categoryId')
   remove(
     @CurrentUser() user: AuthUser,

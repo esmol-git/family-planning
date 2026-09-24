@@ -15,6 +15,7 @@ import { CreateMemberDto, UpdateMemberDto } from './dto/member.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { FamilyAccessGuard } from '../common/guards/family-access.guard';
+import { FamilyEditorGuard } from '../common/guards/family-editor.guard';
 
 @ApiTags('families')
 @ApiBearerAuth()
@@ -33,7 +34,7 @@ export class FamiliesController {
     return this.familiesService.findOne(familyId);
   }
 
-  @UseGuards(FamilyAccessGuard)
+  @UseGuards(FamilyAccessGuard, FamilyEditorGuard)
   @Patch(':familyId')
   update(
     @CurrentUser() user: AuthUser,
@@ -49,7 +50,7 @@ export class FamiliesController {
     return this.familiesService.listMembers(familyId);
   }
 
-  @UseGuards(FamilyAccessGuard)
+  @UseGuards(FamilyAccessGuard, FamilyEditorGuard)
   @Post(':familyId/members')
   createMember(
     @CurrentUser() user: AuthUser,
@@ -59,7 +60,7 @@ export class FamiliesController {
     return this.familiesService.createMember(user.userId, familyId, dto);
   }
 
-  @UseGuards(FamilyAccessGuard)
+  @UseGuards(FamilyAccessGuard, FamilyEditorGuard)
   @Patch(':familyId/members/:memberId')
   updateMember(
     @CurrentUser() user: AuthUser,
@@ -70,7 +71,7 @@ export class FamiliesController {
     return this.familiesService.updateMember(user.userId, familyId, memberId, dto);
   }
 
-  @UseGuards(FamilyAccessGuard)
+  @UseGuards(FamilyAccessGuard, FamilyEditorGuard)
   @Delete(':familyId/members/:memberId')
   deleteMember(
     @CurrentUser() user: AuthUser,

@@ -2,12 +2,13 @@ import { Module } from '@nestjs/common';
 import { CategoriesService } from './categories.service';
 import { CategoriesController } from './categories.controller';
 import { FamilyAccessGuard } from '../common/guards/family-access.guard';
+import { FamilyEditorGuard } from '../common/guards/family-editor.guard';
 import { RealtimeModule } from '../realtime/realtime.module';
 
 @Module({
   imports: [RealtimeModule],
   controllers: [CategoriesController],
-  providers: [CategoriesService, FamilyAccessGuard],
+  providers: [CategoriesService, FamilyAccessGuard, FamilyEditorGuard],
   exports: [CategoriesService],
 })
 export class CategoriesModule {}

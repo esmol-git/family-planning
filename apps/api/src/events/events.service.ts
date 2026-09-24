@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { EventStatus, Prisma } from '@prisma/client';
+import { EventPriority, EventStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConflictService } from '../conflicts/conflict.service';
 import type { ConflictEventInput } from '../conflicts/conflict.types';
@@ -133,6 +133,7 @@ export class EventsService {
         responsibleMemberId: dto.responsibleMemberId,
         travelBufferMinutes: dto.travelBufferMinutes ?? family.travelBufferDefault,
         recurrenceRule,
+        priority: (dto.priority as EventPriority | undefined) ?? EventPriority.medium,
         participants: {
           create: dto.participantIds.map((memberId) => ({ memberId })),
         },
@@ -150,13 +151,22 @@ export class EventsService {
   }
 
   async update(familyId: string, eventId: string, dto: UpdateEventDto) {
-    const { eventId: masterId } = parseInstanceId(eventId);
+    const { eventId: masterId, occurrenceStartsAtUtc: fromId } =
+      parseInstanceId(eventId);
     const existing = await this.prisma.event.findFirst({
       where: { id: masterId, familyId },
-      include: { participants: true, exceptions: true },
+      include: { participants: true, exceptions: true, reminders: true },
     });
     if (!existing) {
       throw new NotFoundException('Событие не найдено');
+    }
+
+    const scope = dto.scope ?? 'series';
+    const occurrenceStartsAtUtc = dto.occurrenceStartsAtUtc ?? fromId;
+
+    // Правка только одного вхождения повторяющейся серии → исключение + новое событие
+    if (existing.recurrenceRule && scope === 'occurrence') {
+      return this.updateOccurrence(familyId, existing, dto, occurrenceStartsAtUtc);
     }
 
     const startsAtUtc = dto.startsAtUtc ?? existing.startsAtUtc.toISOString();
@@ -230,6 +240,7 @@ export class EventsService {
               : dto.responsibleMemberId,
           travelBufferMinutes: dto.travelBufferMinutes,
           recurrenceRule,
+          priority: dto.priority as EventPriority | undefined,
         },
         include: eventInclude,
       });
@@ -247,6 +258,111 @@ export class EventsService {
       include: eventInclude,
     });
     return { event: this.serializeMaster(fresh), conflicts };
+  }
+
+  /**
+   * Исключает одно вхождение из серии и создаёт отдельное событие с новыми данными.
+   */
+  private async updateOccurrence(
+    familyId: string,
+    existing: Prisma.EventGetPayload<{
+      include: { participants: true; exceptions: true; reminders: true };
+    }>,
+    dto: UpdateEventDto,
+    occurrenceStartsAtUtc?: string,
+  ) {
+    if (!occurrenceStartsAtUtc) {
+      throw new BadRequestException(
+        'Для правки одного вхождения укажите occurrenceStartsAtUtc',
+      );
+    }
+
+    const originalStart = new Date(occurrenceStartsAtUtc);
+    const durationMs =
+      existing.endsAtUtc.getTime() - existing.startsAtUtc.getTime();
+    const startsAtUtc = dto.startsAtUtc
+      ? new Date(dto.startsAtUtc)
+      : originalStart;
+    const endsAtUtc = dto.endsAtUtc
+      ? new Date(dto.endsAtUtc)
+      : new Date(startsAtUtc.getTime() + durationMs);
+    this.assertTimeRange(startsAtUtc.toISOString(), endsAtUtc.toISOString());
+
+    const participantIds =
+      dto.participantIds ?? existing.participants.map((p) => p.memberId);
+    const responsibleMemberId =
+      dto.responsibleMemberId === undefined
+        ? existing.responsibleMemberId
+        : dto.responsibleMemberId;
+
+    await this.assertMembersBelong(
+      familyId,
+      participantIds,
+      responsibleMemberId ?? undefined,
+    );
+    const categoryId = dto.categoryId ?? existing.categoryId;
+    await this.assertCategoryBelong(familyId, categoryId);
+
+    const conflicts = await this.runConflictCheck(familyId, {
+      id: 'new',
+      title: dto.title ?? existing.title,
+      startsAtUtc,
+      endsAtUtc,
+      participantIds,
+      responsibleMemberId,
+      travelBufferMinutes: dto.travelBufferMinutes ?? existing.travelBufferMinutes,
+      recurrenceRule: null,
+    });
+    this.throwIfConflicts(conflicts, dto.confirmConflict);
+
+    const reminderMinutes =
+      dto.reminderMinutes ?? existing.reminders.map((r) => r.minutesBefore);
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      await tx.eventException.upsert({
+        where: {
+          eventId_occurrenceStartsAtUtc: {
+            eventId: existing.id,
+            occurrenceStartsAtUtc: originalStart,
+          },
+        },
+        create: {
+          eventId: existing.id,
+          occurrenceStartsAtUtc: originalStart,
+        },
+        update: {},
+      });
+
+      return tx.event.create({
+        data: {
+          familyId,
+          title: dto.title ?? existing.title,
+          description:
+            dto.description !== undefined ? dto.description : existing.description,
+          startsAtUtc,
+          endsAtUtc,
+          timezone: dto.timezone ?? existing.timezone,
+          location: dto.location !== undefined ? dto.location : existing.location,
+          categoryId,
+          responsibleMemberId: responsibleMemberId ?? null,
+          travelBufferMinutes:
+            dto.travelBufferMinutes ?? existing.travelBufferMinutes,
+          recurrenceRule: null,
+          priority: (dto.priority as EventPriority | undefined) ?? existing.priority,
+          participants: {
+            create: participantIds.map((memberId) => ({ memberId })),
+          },
+        },
+        include: eventInclude,
+      });
+    });
+
+    this.realtime.eventsChanged(familyId, 'occurrence_updated');
+    await this.notifications.syncEventReminders(created.id, reminderMinutes);
+    await this.notifications.recomputeNextFireForEvent(existing.id);
+    await this.notifications.notifyEventUpdated(created.id);
+
+    return { event: this.serializeMaster(created), conflicts };
   }
 
   /**
@@ -623,6 +739,7 @@ export class EventsService {
         : null,
       travelBufferMinutes: event.travelBufferMinutes,
       status: event.status,
+      priority: event.priority,
       isRecurring: recurring,
       recurrenceRule: event.recurrenceRule,
       reminderMinutes: event.reminders.map((r) => r.minutesBefore).sort((a, b) => a - b),

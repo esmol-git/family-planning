@@ -118,6 +118,7 @@ const form = reactive({
   byWeekday: [] as number[],
   until: null as Date | null,
   reminderMinutes: [15] as number[],
+  priority: 'medium' as 'low' | 'medium' | 'high',
 });
 
 onMounted(() => {
@@ -132,6 +133,7 @@ onMounted(() => {
     form.responsibleMemberId = props.event.responsibleMemberId ?? '';
     form.travelBufferMinutes = props.event.travelBufferMinutes ?? 15;
     form.reminderMinutes = [...(props.event.reminderMinutes ?? [])];
+    form.priority = props.event.priority ?? 'medium';
     const parsed = parseRRule(props.event.recurrenceRule);
     if (parsed) {
       form.repeatEnabled = true;
@@ -345,14 +347,37 @@ async function submit(forceConfirm = false) {
     ElMessage.warning('Выберите дни недели');
     return;
   }
+
+  let editScope: 'series' | 'occurrence' | undefined;
+  if (props.event?.isRecurring && !asCopy.value) {
+    const action = await ElMessageBox.confirm(
+      'Что изменить?',
+      'Повторяющееся событие',
+      {
+        distinguishCancelAndClose: true,
+        confirmButtonText: 'Только это',
+        cancelButtonText: 'Всю серию',
+        type: 'info',
+      },
+    ).then(
+      () => 'occurrence' as const,
+      (action: string) => (action === 'cancel' ? ('series' as const) : null),
+    );
+    if (!action) return;
+    editScope = action;
+  }
+
   saving.value = true;
   try {
     if (forceConfirm) form.confirmConflict = true;
-    const recurrence = form.repeatEnabled
-      ? buildRecurrencePayload()
-      : props.event?.isRecurring
-        ? null
-        : undefined;
+    const recurrence =
+      editScope === 'occurrence'
+        ? undefined
+        : form.repeatEnabled
+          ? buildRecurrencePayload()
+          : props.event?.isRecurring
+            ? null
+            : undefined;
 
     await store.saveEvent(
       {
@@ -368,7 +393,15 @@ async function submit(forceConfirm = false) {
         travelBufferMinutes: form.travelBufferMinutes,
         confirmConflict: form.confirmConflict,
         reminderMinutes: form.reminderMinutes,
+        priority: form.priority,
         ...(recurrence !== undefined ? { recurrence } : {}),
+        ...(editScope
+          ? {
+              scope: editScope,
+              occurrenceStartsAtUtc:
+                props.event?.occurrenceStartsAtUtc ?? props.event?.startsAtUtc,
+            }
+          : {}),
       },
       masterEventId.value,
     );
@@ -465,6 +498,14 @@ async function remove() {
 
         <el-form-item label="Повторение">
           <el-switch v-model="form.repeatEnabled" active-text="Повторять событие" />
+        </el-form-item>
+
+        <el-form-item label="Приоритет">
+          <el-radio-group v-model="form.priority" class="priority-radios">
+            <el-radio-button value="low">Низкий</el-radio-button>
+            <el-radio-button value="medium">Средний</el-radio-button>
+            <el-radio-button value="high">Высокий</el-radio-button>
+          </el-radio-group>
         </el-form-item>
 
         <el-form-item label="Начало" required>
@@ -732,6 +773,19 @@ async function remove() {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0 1.1rem;
+}
+
+.priority-radios {
+  width: 100%;
+  display: flex;
+}
+
+.priority-radios :deep(.el-radio-button) {
+  flex: 1;
+}
+
+.priority-radios :deep(.el-radio-button__inner) {
+  width: 100%;
 }
 
 .event-form__span2 {

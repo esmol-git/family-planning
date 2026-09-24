@@ -59,6 +59,7 @@ export type CalendarEvent = {
   isRecurring?: boolean;
   recurrenceRule?: string | null;
   reminderMinutes?: number[];
+  priority?: 'low' | 'medium' | 'high';
   participantIds: string[];
   participants: { id: string; name: string; color: string; type: string }[];
 };

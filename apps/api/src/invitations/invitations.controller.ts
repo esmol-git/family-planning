@@ -12,6 +12,7 @@ import { Throttle } from '@nestjs/throttler';
 import { InvitationsService } from './invitations.service';
 import { AcceptByCodeDto, CreateInvitationDto } from './dto/invitation.dto';
 import { FamilyAccessGuard } from '../common/guards/family-access.guard';
+import { FamilyEditorGuard } from '../common/guards/family-editor.guard';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
@@ -22,7 +23,7 @@ export class InvitationsController {
   constructor(private readonly invitationsService: InvitationsService) {}
 
   @ApiBearerAuth()
-  @UseGuards(FamilyAccessGuard)
+  @UseGuards(FamilyAccessGuard, FamilyEditorGuard)
   @Post('families/:familyId/invitations')
   create(
     @CurrentUser() user: AuthUser,
@@ -40,7 +41,7 @@ export class InvitationsController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(FamilyAccessGuard)
+  @UseGuards(FamilyAccessGuard, FamilyEditorGuard)
   @Delete('families/:familyId/invitations/:invitationId')
   revoke(
     @CurrentUser() user: AuthUser,

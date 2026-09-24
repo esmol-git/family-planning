@@ -93,6 +93,10 @@ const isOwner = computed(
   () => !!auth.user && !!store.family && store.family.ownerId === auth.user.id,
 );
 
+const canEdit = computed(() =>
+  auth.canEditFamily(store.family?.id, store.family?.ownerId),
+);
+
 const storedColorBy = localStorage.getItem(COLOR_BY_KEY);
 const colorBy = ref<ColorBy>(storedColorBy === 'member' ? 'member' : 'category');
 
@@ -137,9 +141,14 @@ function participantDotsHtml(participants: CalendarEvent['participants']) {
   return `<span class="fc-who-dots">${dots}</span>`;
 }
 
-const calendarEvents = computed<EventInput[]>(() =>
-  store.filteredEvents.map((e) => {
+const calendarEvents = computed<EventInput[]>(() => {
+  const conflictIds = new Set(store.conflicts.map((c) => c.eventId));
+  return store.filteredEvents.map((e) => {
     const { fill, stripe } = resolveEventColors(e);
+    const priority = e.priority ?? 'medium';
+    const hasConflict = conflictIds.has(e.id);
+    const classNames = ['fc-event--soft', `fc-event--prio-${priority}`];
+    if (hasConflict) classNames.push('fc-event--conflict');
     return {
       id: e.id,
       title: e.title,
@@ -148,11 +157,11 @@ const calendarEvents = computed<EventInput[]>(() =>
       backgroundColor: 'transparent',
       borderColor: 'transparent',
       textColor: 'var(--ink)',
-      classNames: ['fc-event--soft'],
-      extendedProps: { raw: e, fill, stripe },
+      classNames,
+      extendedProps: { raw: e, fill, stripe, priority, hasConflict },
     };
-  }),
-);
+  });
+});
 
 const upcomingEvents = computed(() => {
   const now = Date.now();
@@ -214,28 +223,44 @@ async function persistDraggedEvent(info: {
     end = new Date(start.getTime() + Math.max(duration, 30 * 60 * 1000));
   }
 
+  let dragScope: 'series' | 'occurrence' | undefined;
+
   if (raw.isRecurring) {
     try {
-      await ElMessageBox.confirm(
-        'Это повторяющееся событие. Перенести время для всей серии?',
-        'Перенос серии',
+      const action = await ElMessageBox.confirm(
+        'Что перенести?',
+        'Повторяющееся событие',
         {
+          distinguishCancelAndClose: true,
+          confirmButtonText: 'Только это',
+          cancelButtonText: 'Всю серию',
           type: 'warning',
-          confirmButtonText: 'Перенести серию',
-          cancelButtonText: 'Отмена',
         },
+      ).then(
+        () => 'occurrence' as const,
+        (action: string) => (action === 'cancel' ? ('series' as const) : null),
       );
+      if (!action) {
+        info.revert();
+        return;
+      }
+      dragScope = action;
     } catch {
       info.revert();
       return;
     }
   }
 
-  const payload = {
+  const payload: Record<string, unknown> = {
     startsAtUtc: start.toISOString(),
     endsAtUtc: end.toISOString(),
-    confirmConflict: false as boolean,
+    confirmConflict: false,
   };
+  if (dragScope) {
+    payload.scope = dragScope;
+    payload.occurrenceStartsAtUtc =
+      raw.occurrenceStartsAtUtc ?? raw.startsAtUtc;
+  }
 
   try {
     await store.saveEvent(payload, masterIdOf(raw));
@@ -357,28 +382,37 @@ const calendarOptions = reactive<CalendarOptions>({
     const durationMin =
       (new Date(raw.endsAtUtc).getTime() - new Date(raw.startsAtUtc).getTime()) / 60000;
     const compact = durationMin < 45 && !isMonth && !isList;
+    const priority = raw.priority ?? 'medium';
+    const hasConflict = !!arg.event.extendedProps.hasConflict;
+    const badges = [
+      priority === 'high' ? '<span class="fc-evt__prio fc-evt__prio--high" title="Высокий приоритет">!</span>' : '',
+      priority === 'low' ? '<span class="fc-evt__prio fc-evt__prio--low" title="Низкий приоритет">·</span>' : '',
+      hasConflict ? '<span class="fc-evt__conflict" title="Конфликт">×</span>' : '',
+    ]
+      .filter(Boolean)
+      .join('');
 
     if (isMonth) {
       return {
-        html: `<div class="fc-evt fc-evt--month">${dots}<span class="fc-evt__title">${title}</span></div>`,
+        html: `<div class="fc-evt fc-evt--month">${badges}${dots}<span class="fc-evt__title">${title}</span></div>`,
       };
     }
     if (isList) {
       const meta = [who, location, category].filter(Boolean).join(' · ');
       return {
-        html: `<div class="fc-evt fc-evt--list">${dots}<div><div class="fc-evt__title">${title}</div><div class="fc-evt__meta">${meta}</div></div></div>`,
+        html: `<div class="fc-evt fc-evt--list">${badges}${dots}<div><div class="fc-evt__title">${title}</div><div class="fc-evt__meta">${meta}</div></div></div>`,
       };
     }
     if (compact) {
       return {
-        html: `<div class="fc-evt fc-evt--compact">${dots}<span class="fc-evt__title">${title}</span><span class="fc-evt__time">${time}</span></div>`,
+        html: `<div class="fc-evt fc-evt--compact">${badges}${dots}<span class="fc-evt__title">${title}</span><span class="fc-evt__time">${time}</span></div>`,
       };
     }
     const metaLine = [who, location].filter(Boolean).join(' · ');
     return {
       html: `<div class="fc-evt">
         <div class="fc-evt__head">
-          <span class="fc-evt__title">${title}</span>
+          <span class="fc-evt__title">${badges}${title}</span>
           ${dots}
         </div>
         <div class="fc-evt__time">${time}</div>
@@ -388,6 +422,7 @@ const calendarOptions = reactive<CalendarOptions>({
     };
   },
   select(info: DateSelectArg) {
+    if (!canEdit.value) return;
     editing.value = null;
     initialStart.value = info.start;
     if (info.allDay) {
@@ -401,6 +436,10 @@ const calendarOptions = reactive<CalendarOptions>({
     showForm.value = true;
   },
   eventClick(info: EventClickArg) {
+    if (!canEdit.value) {
+      ElMessage.info('Помощник может только просматривать календарь');
+      return;
+    }
     editing.value = info.event.extendedProps.raw as CalendarEvent;
     showForm.value = true;
   },
@@ -418,6 +457,17 @@ const calendarOptions = reactive<CalendarOptions>({
     };
   },
 });
+
+watch(
+  canEdit,
+  (v) => {
+    calendarOptions.selectable = v;
+    calendarOptions.editable = v;
+    calendarOptions.eventStartEditable = v;
+    calendarOptions.eventDurationEditable = v;
+  },
+  { immediate: true },
+);
 
 async function ensureFamily() {
   if (!auth.user && getStoredTokenSafe()) {
@@ -484,6 +534,7 @@ onUnmounted(() => {
 });
 
 function openCreate() {
+  if (!canEdit.value) return;
   editing.value = null;
   const start = new Date();
   start.setMinutes(0, 0, 0);
@@ -494,6 +545,10 @@ function openCreate() {
 }
 
 function openEvent(event: CalendarEvent) {
+  if (!canEdit.value) {
+    ElMessage.info('Помощник может только просматривать календарь');
+    return;
+  }
   editing.value = event;
   showForm.value = true;
 }
@@ -627,7 +682,15 @@ function logout() {
 
       <div class="topbar__actions">
         <NotificationsBell />
-        <el-button type="primary" :icon="Plus" @click="openCreate">Событие</el-button>
+        <el-button
+          v-if="canEdit"
+          type="primary"
+          :icon="Plus"
+          @click="openCreate"
+        >
+          Событие
+        </el-button>
+        <el-tag v-else size="small" type="info" effect="plain">Только просмотр</el-tag>
         <el-dropdown
           trigger="click"
           placement="bottom-end"

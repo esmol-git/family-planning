@@ -114,6 +114,11 @@ export class CreateEventDto {
   @Max(60 * 24 * 30, { each: true })
   reminderMinutes?: number[];
 
+  @ApiPropertyOptional({ enum: ['low', 'medium', 'high'], default: 'medium' })
+  @IsOptional()
+  @IsEnum(['low', 'medium', 'high'])
+  priority?: 'low' | 'medium' | 'high';
+
   @ApiPropertyOptional({
     description: 'Подтвердить сохранение при мягких конфликтах (буфер)',
   })
@@ -199,6 +204,26 @@ export class UpdateEventDto {
   @Min(0, { each: true })
   @Max(60 * 24 * 30, { each: true })
   reminderMinutes?: number[];
+
+  @ApiPropertyOptional({ enum: ['low', 'medium', 'high'] })
+  @IsOptional()
+  @IsEnum(['low', 'medium', 'high'])
+  priority?: 'low' | 'medium' | 'high';
+
+  @ApiPropertyOptional({
+    enum: ['series', 'occurrence'],
+    description: 'Для повторяющихся: series (по умолчанию) или только это вхождение',
+  })
+  @IsOptional()
+  @IsEnum(['series', 'occurrence'])
+  scope?: 'series' | 'occurrence';
+
+  @ApiPropertyOptional({
+    description: 'Исходное время вхождения при scope=occurrence',
+  })
+  @IsOptional()
+  @IsDateString()
+  occurrenceStartsAtUtc?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -31,6 +31,12 @@ enum EventStatus {
   cancelled
 }
 
+enum EventPriority {
+  low
+  medium
+  high
+}
+
 enum InvitationStatus {
   pending
   accepted
@@ -195,9 +201,10 @@ model Event {
   travelBufferMinutes Int?
   /// RRULE string, e.g. FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=20261231T235959Z
   recurrenceRule      String?
-  status              EventStatus @default(active)
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
+  status              EventStatus   @default(active)
+  priority            EventPriority @default(medium)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 
   family       Family             @relation(fields: [familyId], references: [id], onDelete: Cascade)
   category     Category           @relation(fields: [categoryId], references: [id])

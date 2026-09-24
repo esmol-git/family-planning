@@ -17,6 +17,12 @@ export type User = {
   email: string | null;
   name: string;
   families?: { id: string; name: string }[];
+  memberships?: {
+    familyId: string;
+    memberId: string;
+    type: string;
+    relation: string;
+  }[];
 };
 
 type AuthResponse = AuthTokens & { user: User };
@@ -27,6 +33,15 @@ export const useAuthStore = defineStore('auth', () => {
   let fetchMeSeq = 0;
 
   const isAuthenticated = computed(() => !!user.value);
+
+  /** Владелец семьи или взрослый — может менять события/настройки; helper — только смотреть */
+  function canEditFamily(familyId: string | undefined | null, ownerId?: string | null) {
+    if (!user.value || !familyId) return false;
+    if (ownerId && user.value.id === ownerId) return true;
+    const membership = user.value.memberships?.find((m) => m.familyId === familyId);
+    if (!membership) return false;
+    return membership.type === 'owner' || membership.type === 'adult';
+  }
 
   function applyAuth(res: AuthResponse) {
     setToken(res.accessToken);
@@ -144,6 +159,7 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     loading,
     isAuthenticated,
+    canEditFamily,
     login,
     register,
     fetchMe,

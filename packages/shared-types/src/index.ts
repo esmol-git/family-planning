@@ -43,6 +43,22 @@ export enum EventStatus {
   CANCELLED = 'cancelled',
 }
 
+export enum EventPriority {
+  LOW = 'low',
+  MEDIUM = 'medium',
+  HIGH = 'high',
+}
+
+export const EVENT_PRIORITY_LABELS: Record<EventPriority, string> = {
+  [EventPriority.LOW]: 'Низкий',
+  [EventPriority.MEDIUM]: 'Средний',
+  [EventPriority.HIGH]: 'Высокий',
+};
+
+export const EVENT_PRIORITY_OPTIONS = (
+  Object.keys(EVENT_PRIORITY_LABELS) as EventPriority[]
+).map((value) => ({ value, label: EVENT_PRIORITY_LABELS[value] }));
+
 /** Стартовый набор категорий при создании семьи */
 export const DEFAULT_CATEGORIES: Array<{ name: string; color: string }> = [
   { name: 'Школа', color: '#2563EB' },

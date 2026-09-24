@@ -13,6 +13,7 @@ import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { EventsService } from './events.service';
 import { CheckConflictsDto, CreateEventDto, UpdateEventDto } from './dto/event.dto';
 import { FamilyAccessGuard } from '../common/guards/family-access.guard';
+import { FamilyEditorGuard } from '../common/guards/family-editor.guard';
 
 @ApiTags('events')
 @ApiBearerAuth()
@@ -36,6 +37,7 @@ export class EventsController {
     return this.eventsService.list(familyId, { from, to, memberId, categoryId });
   }
 
+  @UseGuards(FamilyEditorGuard)
   @Post('events')
   create(@Param('familyId') familyId: string, @Body() dto: CreateEventDto) {
     return this.eventsService.create(familyId, dto);
@@ -62,6 +64,7 @@ export class EventsController {
     return this.eventsService.findOne(familyId, eventId);
   }
 
+  @UseGuards(FamilyEditorGuard)
   @Patch('events/:eventId')
   update(
     @Param('familyId') familyId: string,
@@ -71,6 +74,7 @@ export class EventsController {
     return this.eventsService.update(familyId, eventId, dto);
   }
 
+  @UseGuards(FamilyEditorGuard)
   @Delete('events/:eventId')
   @ApiQuery({ name: 'scope', required: false, enum: ['series', 'occurrence'] })
   @ApiQuery({ name: 'occurrenceStartsAtUtc', required: false })

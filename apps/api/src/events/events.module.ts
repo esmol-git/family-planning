@@ -3,12 +3,13 @@ import { EventsService } from './events.service';
 import { EventsController } from './events.controller';
 import { ConflictService } from '../conflicts/conflict.service';
 import { FamilyAccessGuard } from '../common/guards/family-access.guard';
+import { FamilyEditorGuard } from '../common/guards/family-editor.guard';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [RealtimeModule, NotificationsModule],
   controllers: [EventsController],
-  providers: [EventsService, ConflictService, FamilyAccessGuard],
+  providers: [EventsService, ConflictService, FamilyAccessGuard, FamilyEditorGuard],
 })
 export class EventsModule {}
