@@ -235,6 +235,14 @@ a {
   gap: 0.45rem;
 }
 
+.filter-login {
+  margin-left: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .filter-chips {
   display: flex;
   flex-wrap: wrap;
