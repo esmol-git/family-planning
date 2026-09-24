@@ -1,0 +1,74 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install & build
+        env:
+          VITE_API_URL: https://family-calendar.esmolakov.ru
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @family-calendar/shared-types build
+          pnpm --filter @family-calendar/api exec prisma generate
+          pnpm --filter @family-calendar/api build
+          echo "VITE_API_URL=$VITE_API_URL" > apps/web/.env
+          pnpm --filter @family-calendar/web build
+
+      - name: Sync to VPS
+        uses: burnett01/rsync-deployments@7.0.2
+        with:
+          switches: >-
+            -avz
+            --delete
+            --exclude .git
+            --exclude .env
+            --exclude '**/.env'
+            --exclude node_modules
+            --exclude .cursor
+            --exclude agent-transcripts
+          path: ./
+          remote_path: /opt/family-calendar/
+          remote_host: ${{ secrets.DEPLOY_HOST }}
+          remote_user: ${{ secrets.DEPLOY_USER }}
+          remote_key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Migrate & restart API
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/family-calendar
+            pnpm install --frozen-lockfile
+            cd apps/api
+            pnpm exec prisma generate
+            pnpm exec prisma migrate deploy
+            cd /opt/family-calendar/apps/api
+            pm2 describe family-api >/dev/null 2>&1 \
+              && pm2 restart family-api --update-env \
+              || pm2 start dist/main.js --name family-api
+            pm2 save
+            pm2 status

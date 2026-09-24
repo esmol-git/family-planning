@@ -1,0 +1,23 @@
+{
+  "name": "family-calendar",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter @family-calendar/api --filter @family-calendar/web dev",
+    "dev:api": "pnpm --filter @family-calendar/api dev",
+    "dev:web": "pnpm --filter @family-calendar/web dev",
+    "build": "pnpm --filter @family-calendar/shared-types build && pnpm -r --filter '!@family-calendar/shared-types' build",
+    "lint": "pnpm -r lint",
+    "test": "pnpm --filter @family-calendar/api test",
+    "db:migrate": "pnpm --filter @family-calendar/api prisma:migrate",
+    "db:seed": "pnpm --filter @family-calendar/api prisma:seed",
+    "db:generate": "pnpm --filter @family-calendar/api prisma:generate",
+    "docker:up": "docker compose -f infra/docker-compose.yml up -d",
+    "docker:down": "docker compose -f infra/docker-compose.yml down",
+    "postinstall": "pnpm --filter @family-calendar/shared-types build"
+  },
+  "devDependencies": {
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2"
+  }
+}
