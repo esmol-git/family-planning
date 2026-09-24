@@ -127,8 +127,31 @@ export class InvitationsService {
   }
 
   async previewByToken(token: string) {
-    const invitation = await this.findUsableByToken(token);
-    return this.publicPreview(invitation);
+    const invitation = await this.prisma.invitation.findUnique({
+      where: { token },
+      include: { family: { select: { id: true, name: true } } },
+    });
+    if (!invitation) {
+      throw new NotFoundException('Приглашение не найдено');
+    }
+
+    let status = invitation.status;
+    if (
+      status === InvitationStatus.pending &&
+      invitation.expiresAt.getTime() < Date.now()
+    ) {
+      await this.prisma.invitation.update({
+        where: { id: invitation.id },
+        data: { status: InvitationStatus.expired },
+      });
+      status = InvitationStatus.expired;
+    }
+
+    return {
+      ...this.publicPreview(invitation),
+      status,
+      usable: status === InvitationStatus.pending,
+    };
   }
 
   async previewByCode(code: string) {
