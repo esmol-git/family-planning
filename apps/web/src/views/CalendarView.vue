@@ -961,6 +961,7 @@ function logout() {
             >
               <span class="dot" :style="{ background: m.color }" />
               {{ m.name }}
+              <span v-if="m.login" class="filter-login">{{ m.login }}</span>
             </el-check-tag>
           </div>
         </section>

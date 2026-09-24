@@ -250,6 +250,10 @@ async function removeMember(member: Member) {
                 <span class="member-card__type">
                   {{ relationLabel(m.relation) }}
                   · {{ TYPE_LABELS[m.type] ?? m.type }}
+                  <template v-if="m.login"> · логин {{ m.login }}</template>
+                  <template v-else-if="m.type === 'adult' || m.type === 'helper'">
+                    · без входа
+                  </template>
                 </span>
               </div>
             </div>

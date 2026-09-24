@@ -200,14 +200,15 @@ defineExpose({ load });
           <span class="dot" :style="{ background: m.color }" />
           {{ m.name }}
           <span class="muted">
-            · {{ m.userId ? 'есть вход' : 'без входа' }}
+            ·
+            {{ m.login ? `логин ${m.login}` : 'без входа' }}
           </span>
         </span>
         <el-button
           type="primary"
           link
           :loading="reinvitingId === m.id"
-          @click="reinvite(m.id, m.name, !!m.userId)"
+          @click="reinvite(m.id, m.name, !!(m.login || m.userId))"
         >
           Выдать ссылку снова
         </el-button>

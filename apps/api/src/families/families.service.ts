@@ -48,14 +48,20 @@ export class FamiliesService {
     const family = await this.prisma.family.findUnique({
       where: { id: familyId },
       include: {
-        members: { orderBy: { createdAt: 'asc' } },
+        members: {
+          orderBy: { createdAt: 'asc' },
+          include: { user: { select: { login: true } } },
+        },
         categories: { where: { active: true }, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] },
       },
     });
     if (!family) {
       throw new NotFoundException('Семейная группа не найдена');
     }
-    return family;
+    return {
+      ...family,
+      members: family.members.map((m) => this.serializeMember(m)),
+    };
   }
 
   async update(userId: string, familyId: string, dto: UpdateFamilyDto) {
@@ -63,20 +69,21 @@ export class FamiliesService {
     if (family.ownerId !== userId) {
       throw new ForbiddenException('Только организатор может изменять настройки семьи');
     }
-    const updated = await this.prisma.family.update({
+    await this.prisma.family.update({
       where: { id: familyId },
       data: dto,
-      include: { members: true },
     });
     this.realtime.familyChanged(familyId, 'updated');
-    return updated;
+    return this.findOne(familyId);
   }
 
   async listMembers(familyId: string) {
-    return this.prisma.familyMember.findMany({
+    const members = await this.prisma.familyMember.findMany({
       where: { familyId },
       orderBy: { createdAt: 'asc' },
+      include: { user: { select: { login: true } } },
     });
+    return members.map((m) => this.serializeMember(m));
   }
 
   async createMember(userId: string, familyId: string, dto: CreateMemberDto) {
@@ -92,9 +99,10 @@ export class FamiliesService {
         type: dto.type,
         relation: dto.relation,
       },
+      include: { user: { select: { login: true } } },
     });
     this.realtime.membersChanged(familyId, 'created');
-    return member;
+    return this.serializeMember(member);
   }
 
   async updateMember(userId: string, familyId: string, memberId: string, dto: UpdateMemberDto) {
@@ -113,6 +121,7 @@ export class FamiliesService {
       const next = await tx.familyMember.update({
         where: { id: memberId },
         data: dto,
+        include: { user: { select: { login: true } } },
       });
       // Имя в шапке = User.name; держим в синхроне с карточкой участника, если аккаунт привязан
       if (dto.name && member.userId) {
@@ -125,7 +134,7 @@ export class FamiliesService {
     });
 
     this.realtime.membersChanged(familyId, 'updated');
-    return updated;
+    return this.serializeMember(updated);
   }
 
   async deleteMember(userId: string, familyId: string, memberId: string) {
@@ -182,5 +191,34 @@ export class FamiliesService {
     if (family.ownerId !== userId) {
       throw new ForbiddenException('Только организатор может управлять участниками');
     }
+  }
+
+  /** Публичные поля участника — логин виден семье, пароль никогда */
+  private serializeMember(m: {
+    id: string;
+    familyId: string;
+    userId: string | null;
+    name: string;
+    color: string;
+    type: MemberType;
+    relation: MemberRelation;
+    active: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+    user?: { login: string } | null;
+  }) {
+    return {
+      id: m.id,
+      familyId: m.familyId,
+      userId: m.userId,
+      name: m.name,
+      color: m.color,
+      type: m.type,
+      relation: m.relation,
+      active: m.active,
+      login: m.user?.login ?? null,
+      createdAt: m.createdAt,
+      updatedAt: m.updatedAt,
+    };
   }
 }

@@ -19,6 +19,8 @@ export type Member = {
   type: string;
   relation: string;
   active: boolean;
+  /** Логин аккаунта, если привязан; пароль никогда не отдаём */
+  login?: string | null;
 };
 
 export type Category = {
