@@ -41,7 +41,13 @@ async function submit() {
     <el-card class="auth-card" shadow="never">
       <div class="brand">Семейный календарь</div>
       <h1>Регистрация</h1>
-      <p class="lead">Логин и пароль — этого достаточно для входа</p>
+      <p class="lead">
+        {{
+          typeof route.query.redirect === 'string' && route.query.redirect.includes('/invite/')
+            ? 'Придумайте логин и пароль — потом попадёте в семью по приглашению'
+            : 'Логин и пароль — этого достаточно для входа'
+        }}
+      </p>
 
       <el-form label-position="top" size="large" @submit.prevent="submit">
         <el-form-item label="Имя">
@@ -64,7 +70,9 @@ async function submit() {
           <el-button type="primary" native-type="submit" :loading="loading" size="large">
             Создать аккаунт
           </el-button>
-          <el-button size="large" @click="router.push('/login')">Уже есть аккаунт</el-button>
+          <el-button size="large" @click="router.push({ name: 'login', query: route.query })">
+            Уже есть аккаунт
+          </el-button>
         </el-space>
       </el-form>
     </el-card>

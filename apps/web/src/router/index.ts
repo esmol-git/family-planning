@@ -81,6 +81,10 @@ router.beforeEach(async (to) => {
       to.name === 'forgot-password' ||
       to.name === 'reset-password'
     ) {
+      const redirect = typeof to.query.redirect === 'string' ? to.query.redirect : '';
+      if (redirect.startsWith('/') && !redirect.startsWith('//')) {
+        return redirect;
+      }
       return { name: 'home' };
     }
   }

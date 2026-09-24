@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useFamilyStore } from '../stores/family';
@@ -17,6 +17,13 @@ const router = useRouter();
 
 const step = ref(0);
 const loading = ref(false);
+
+onMounted(async () => {
+  if (!auth.user) await auth.fetchMe();
+  if ((auth.user?.families?.length ?? 0) > 0) {
+    await router.replace('/');
+  }
+});
 
 const familyName = ref('');
 const memberForm = reactive({

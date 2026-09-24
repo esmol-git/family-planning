@@ -57,7 +57,9 @@ async function submit() {
           <el-button type="primary" native-type="submit" :loading="loading" size="large">
             Войти
           </el-button>
-          <el-button size="large" @click="router.push('/register')">Регистрация</el-button>
+          <el-button size="large" @click="router.push({ name: 'register', query: route.query })">
+            Регистрация
+          </el-button>
         </el-space>
       </el-form>
     </el-card>

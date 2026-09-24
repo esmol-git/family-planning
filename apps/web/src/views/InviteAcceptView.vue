@@ -25,6 +25,8 @@ const roleLabel: Record<string, string> = {
   helper: 'Помощник',
 };
 
+const inviteRedirect = computed(() => route.fullPath);
+
 async function load() {
   loading.value = true;
   error.value = '';
@@ -41,8 +43,8 @@ async function load() {
 async function accept() {
   if (!auth.isAuthenticated) {
     await router.push({
-      name: 'login',
-      query: { redirect: route.fullPath },
+      name: 'register',
+      query: { redirect: inviteRedirect.value },
     });
     return;
   }
@@ -50,7 +52,7 @@ async function accept() {
   try {
     await api(`/invitations/${token.value}/accept`, { method: 'POST' });
     await auth.fetchMe();
-    ElMessage.success('Вы присоединились к семье');
+    ElMessage.success(`Вы в семье «${preview.value?.family.name ?? ''}»`);
     await router.replace('/');
   } catch (e) {
     ElMessage.error(e instanceof ApiError ? e.message : 'Не удалось принять');
@@ -59,14 +61,27 @@ async function accept() {
   }
 }
 
-onMounted(load);
+onMounted(async () => {
+  await load();
+  if (!preview.value || error.value) return;
+
+  if (auth.isAuthenticated) {
+    const alreadyIn = auth.user?.families?.some((f) => f.id === preview.value!.family.id);
+    if (alreadyIn) {
+      await router.replace('/');
+      return;
+    }
+    // Уже вошли/зарегистрировались и вернулись по redirect — сразу в семью
+    await accept();
+  }
+});
 </script>
 
 <template>
   <div class="auth-page">
-    <el-card class="auth-card" shadow="never" v-loading="loading">
+    <el-card class="auth-card" shadow="never" v-loading="loading || accepting">
       <div class="brand">Семейный календарь</div>
-      <h1>Приглашение</h1>
+      <h1>Приглашение в семью</h1>
 
       <el-alert
         v-if="error"
@@ -79,35 +94,44 @@ onMounted(load);
 
       <template v-else-if="preview">
         <p class="lead" style="margin-bottom: 0.75rem">
-          Вас приглашают в семью
+          Вас приглашают в
           <strong>{{ preview.family.name }}</strong>
+          — это не создание новой семьи.
         </p>
         <p class="muted" style="margin: 0 0 0.35rem">
           Роль: {{ roleLabel[preview.memberType] ?? preview.memberType }}
-          <span v-if="preview.invitedName"> · имя: {{ preview.invitedName }}</span>
+          <span v-if="preview.invitedName"> · профиль: {{ preview.invitedName }}</span>
         </p>
         <p class="muted" style="font-size: 0.85rem; margin: 0 0 1.5rem">
           Действует до {{ new Date(preview.expiresAt).toLocaleString('ru-RU') }}
         </p>
 
-        <el-space wrap :size="12">
+        <template v-if="!auth.isAuthenticated">
+          <p class="muted" style="margin: 0 0 1rem; font-size: 0.9rem">
+            Придумайте логин и пароль — после этого попадёте сразу в эту семью.
+          </p>
+          <el-space wrap :size="12">
+            <el-button type="primary" size="large" @click="accept">
+              Создать логин и присоединиться
+            </el-button>
+            <el-button
+              size="large"
+              @click="
+                router.push({
+                  name: 'login',
+                  query: { redirect: inviteRedirect },
+                })
+              "
+            >
+              Уже есть аккаунт
+            </el-button>
+          </el-space>
+        </template>
+        <template v-else>
           <el-button type="primary" size="large" :loading="accepting" @click="accept">
-            {{ auth.isAuthenticated ? 'Присоединиться' : 'Войти и присоединиться' }}
+            Присоединиться к «{{ preview.family.name }}»
           </el-button>
-          <el-button
-            v-if="!auth.isAuthenticated"
-            size="large"
-            @click="
-              router.push({
-                name: 'register',
-                query: { redirect: route.fullPath },
-              })
-            "
-          >
-            Регистрация
-          </el-button>
-          <el-button v-else size="large" @click="router.push('/')">Отмена</el-button>
-        </el-space>
+        </template>
       </template>
     </el-card>
   </div>
