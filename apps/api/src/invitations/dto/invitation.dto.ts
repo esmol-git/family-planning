@@ -55,3 +55,12 @@ export class AcceptByCodeDto {
   @MinLength(4)
   code!: string;
 }
+
+export class ReinviteMemberDto {
+  @ApiPropertyOptional({ example: 7, description: 'Срок жизни в днях (1–30)' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(30)
+  expiresInDays?: number;
+}

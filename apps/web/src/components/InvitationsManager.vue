@@ -27,6 +27,7 @@ const STATUS_LABEL: Record<string, string> = {
 const store = useFamilyStore();
 const loading = ref(false);
 const creating = ref(false);
+const reinvitingId = ref<string | null>(null);
 const invitations = ref<Invitation[]>([]);
 const form = reactive({
   memberType: 'adult' as 'adult' | 'helper',
@@ -41,6 +42,15 @@ const unboundMembers = computed(() =>
   (store.family?.members ?? []).filter(
     (m) =>
       !m.userId &&
+      m.active !== false &&
+      (m.type === 'adult' || m.type === 'helper'),
+  ),
+);
+
+/** Кому можно выдать / перевыпустить ссылку */
+const inviteTargets = computed(() =>
+  (store.family?.members ?? []).filter(
+    (m) =>
       m.active !== false &&
       (m.type === 'adult' || m.type === 'helper'),
   ),
@@ -99,6 +109,7 @@ async function create() {
     form.invitedName = '';
     form.targetMemberId = '';
     ElMessage.success('Приглашение создано — скопируйте ссылку ниже');
+    await copy(`${inviteBase}${created.invitePath}`, 'Ссылка');
   } catch (e) {
     ElMessage.error(e instanceof ApiError ? e.message : 'Не удалось создать');
   } finally {
@@ -106,10 +117,48 @@ async function create() {
   }
 }
 
+async function reinvite(memberId: string, memberName: string, hasLogin: boolean) {
+  if (!store.family) return;
+  try {
+    await ElMessageBox.confirm(
+      hasLogin
+        ? `Сбросить вход «${memberName}» и выдать новую ссылку? Старый логин перестанет открывать эту семью — человек заново создаст пароль по ссылке.`
+        : `Выдать новую ссылку для «${memberName}»? Старые неиспользованные ссылки на этого участника отзовутся.`,
+      'Новая ссылка',
+      {
+        type: 'warning',
+        confirmButtonText: 'Выдать ссылку',
+        cancelButtonText: 'Отмена',
+      },
+    );
+  } catch {
+    return;
+  }
+
+  reinvitingId.value = memberId;
+  try {
+    const created = await api<Invitation>(
+      `/families/${store.family.id}/members/${memberId}/reinvite`,
+      {
+        method: 'POST',
+        json: { expiresInDays: form.expiresInDays },
+      },
+    );
+    invitations.value.unshift(created);
+    await store.loadFamily(store.family.id);
+    ElMessage.success(`Ссылка для «${memberName}» готова`);
+    await copy(`${inviteBase}${created.invitePath}`, 'Ссылка');
+  } catch (e) {
+    ElMessage.error(e instanceof ApiError ? e.message : 'Не удалось выдать ссылку');
+  } finally {
+    reinvitingId.value = null;
+  }
+}
+
 async function copy(text: string, label: string) {
   try {
     await navigator.clipboard.writeText(text);
-    ElMessage.success(`${label} скопирован`);
+    ElMessage.success(`${label} скопирована`);
   } catch {
     ElMessage.warning('Не удалось скопировать');
   }
@@ -138,19 +187,48 @@ defineExpose({ load });
 
 <template>
   <div class="invites-manager">
+    <p class="invites-lead">
+      Ссылка нужна один раз, чтобы человек придумал логин и пароль. Если не получилось или
+      забыл пароль — нажмите «Выдать ссылку снова» у участника. Дальше вход только логином на
+      главной странице.
+    </p>
+
+    <h3 class="invites-subtitle">Участники</h3>
+    <ul class="invite-targets">
+      <li v-for="m in inviteTargets" :key="m.id" class="invite-targets__row">
+        <span class="invite-targets__name">
+          <span class="dot" :style="{ background: m.color }" />
+          {{ m.name }}
+          <span class="muted">
+            · {{ m.userId ? 'есть вход' : 'без входа' }}
+          </span>
+        </span>
+        <el-button
+          type="primary"
+          link
+          :loading="reinvitingId === m.id"
+          @click="reinvite(m.id, m.name, !!m.userId)"
+        >
+          Выдать ссылку снова
+        </el-button>
+      </li>
+    </ul>
+    <p v-if="!inviteTargets.length" class="muted" style="margin: 0 0 1rem">
+      Пока нет взрослых или помощников — добавьте участника в настройках семьи.
+    </p>
+
+    <el-divider />
+
+    <h3 class="invites-subtitle">Или новое приглашение</h3>
     <el-alert
       v-if="!hasUnbound"
-      type="success"
+      type="info"
       :closable="false"
       show-icon
-      title="Все взрослые уже с аккаунтом"
-      description="Екатерина и другие привязаны. Ниже можно пригласить нового человека — появится отдельный участник в календаре."
-      style="margin-bottom: 1.25rem"
+      title="Все из списка уже с входом или без слота"
+      description="Для существующего участника используйте «Выдать ссылку снова» выше. Ниже — приглашение нового человека (появится отдельный профиль)."
+      style="margin-bottom: 1.15rem"
     />
-    <p v-else class="invites-lead">
-      Выберите участника без входа — аккаунт привяжется к нему без дубля. Или оставьте
-      пустым и создайте нового.
-    </p>
 
     <el-form
       label-position="top"
@@ -225,6 +303,7 @@ defineExpose({ load });
 
     <el-divider />
 
+    <h3 class="invites-subtitle">История</h3>
     <el-table
       v-loading="loading"
       :data="invitations"
@@ -282,6 +361,47 @@ defineExpose({ load });
   font-size: 0.9rem;
   color: var(--muted);
   line-height: 1.45;
+}
+
+.invites-subtitle {
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.invite-targets {
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.invite-targets__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.invite-targets__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  font-size: 0.92rem;
+}
+
+.dot {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .invites-form :deep(.el-form-item) {

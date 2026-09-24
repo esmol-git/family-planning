@@ -10,7 +10,7 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { InvitationsService } from './invitations.service';
-import { AcceptByCodeDto, CreateInvitationDto } from './dto/invitation.dto';
+import { AcceptByCodeDto, CreateInvitationDto, ReinviteMemberDto } from './dto/invitation.dto';
 import { FamilyAccessGuard } from '../common/guards/family-access.guard';
 import { FamilyEditorGuard } from '../common/guards/family-editor.guard';
 import { Public } from '../common/decorators/public.decorator';
@@ -31,6 +31,18 @@ export class InvitationsController {
     @Body() dto: CreateInvitationDto,
   ) {
     return this.invitationsService.create(user.userId, familyId, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(FamilyAccessGuard, FamilyEditorGuard)
+  @Post('families/:familyId/members/:memberId/reinvite')
+  reinvite(
+    @CurrentUser() user: AuthUser,
+    @Param('familyId') familyId: string,
+    @Param('memberId') memberId: string,
+    @Body() dto: ReinviteMemberDto,
+  ) {
+    return this.invitationsService.reinvite(user.userId, familyId, memberId, dto);
   }
 
   @ApiBearerAuth()

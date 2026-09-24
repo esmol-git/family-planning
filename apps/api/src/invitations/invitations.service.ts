@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { InvitationStatus, MemberType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { AcceptByCodeDto, CreateInvitationDto } from './dto/invitation.dto';
+import { AcceptByCodeDto, CreateInvitationDto, ReinviteMemberDto } from './dto/invitation.dto';
 import { RealtimeService } from '../realtime/realtime.service';
 
 function generateCode(length = 6): string {
@@ -29,7 +29,7 @@ export class InvitationsService {
   ) {}
 
   async create(userId: string, familyId: string, dto: CreateInvitationDto) {
-    await this.assertOwner(userId, familyId);
+    await this.assertCanManageInvites(userId, familyId);
 
     let targetMemberId: string | undefined;
     let invitedName = dto.invitedName?.trim();
@@ -44,7 +44,9 @@ export class InvitationsService {
         throw new NotFoundException('Участник не найден');
       }
       if (target.userId) {
-        throw new BadRequestException('У этого участника уже есть вход в приложение');
+        throw new BadRequestException(
+          'У участника уже есть вход. Нажмите «Выдать ссылку снова» — старый вход сбросится.',
+        );
       }
       if (target.type === MemberType.owner) {
         throw new BadRequestException('Нельзя привязать приглашение к организатору');
@@ -56,26 +58,121 @@ export class InvitationsService {
       invitedName = target.name;
       color = target.color;
       memberType = target.type === MemberType.helper ? MemberType.helper : MemberType.adult;
+
+      // Старые неиспользованные ссылки на этого участника — отозвать
+      await this.prisma.invitation.updateMany({
+        where: {
+          familyId,
+          targetMemberId,
+          status: InvitationStatus.pending,
+        },
+        data: { status: InvitationStatus.revoked },
+      });
     }
 
-    const expiresInDays = dto.expiresInDays ?? 7;
+    return this.createInvitationRecord({
+      familyId,
+      createdById: userId,
+      memberType,
+      invitedName,
+      invitedEmail: dto.invitedEmail?.toLowerCase(),
+      color,
+      targetMemberId,
+      expiresInDays: dto.expiresInDays ?? 7,
+    });
+  }
+
+  /**
+   * Новая ссылка для участника: отвязывает старый аккаунт (если был)
+   * и создаёт свежее приглашение. Нужно, когда человек не дошёл до логина
+   * или забыл пароль / нужна повторная регистрация.
+   */
+  async reinvite(
+    userId: string,
+    familyId: string,
+    memberId: string,
+    dto: ReinviteMemberDto,
+  ) {
+    await this.assertCanManageInvites(userId, familyId);
+
+    const member = await this.prisma.familyMember.findFirst({
+      where: { id: memberId, familyId, active: true },
+    });
+    if (!member) {
+      throw new NotFoundException('Участник не найден');
+    }
+    if (member.type === MemberType.owner) {
+      throw new BadRequestException('Организатор уже с входом');
+    }
+    if (member.type === MemberType.child) {
+      throw new BadRequestException('Детский профиль нельзя привязать к аккаунту');
+    }
+
+    const previousUserId = member.userId;
+
+    await this.prisma.$transaction(async (tx) => {
+      if (previousUserId) {
+        await tx.familyMember.update({
+          where: { id: member.id },
+          data: { userId: null },
+        });
+        await tx.refreshToken.updateMany({
+          where: { userId: previousUserId, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+      }
+      await tx.invitation.updateMany({
+        where: {
+          familyId,
+          targetMemberId: member.id,
+          status: InvitationStatus.pending,
+        },
+        data: { status: InvitationStatus.revoked },
+      });
+    });
+
+    const invitation = await this.createInvitationRecord({
+      familyId,
+      createdById: userId,
+      memberType:
+        member.type === MemberType.helper ? MemberType.helper : MemberType.adult,
+      invitedName: member.name,
+      color: member.color,
+      targetMemberId: member.id,
+      expiresInDays: dto.expiresInDays ?? 7,
+    });
+
+    this.realtime.membersChanged(familyId, 'unlinked_for_reinvite');
+    return invitation;
+  }
+
+  private async createInvitationRecord(data: {
+    familyId: string;
+    createdById: string;
+    memberType: MemberType;
+    invitedName?: string | null;
+    invitedEmail?: string;
+    color: string;
+    targetMemberId?: string;
+    expiresInDays: number;
+  }) {
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + expiresInDays);
+    expiresAt.setDate(expiresAt.getDate() + data.expiresInDays);
 
     let invitation = null;
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
         invitation = await this.prisma.invitation.create({
           data: {
-            familyId,
-            createdById: userId,
+            familyId: data.familyId,
+            createdById: data.createdById,
             token: randomBytes(24).toString('hex'),
             code: generateCode(6),
-            memberType,
-            invitedName,
-            invitedEmail: dto.invitedEmail?.toLowerCase(),
-            color,
-            targetMemberId,
+            memberType: data.memberType,
+            invitedName: data.invitedName,
+            invitedEmail: data.invitedEmail,
+            color: data.color,
+            targetMemberId: data.targetMemberId,
             expiresAt,
           },
           include: {
@@ -96,7 +193,7 @@ export class InvitationsService {
   }
 
   async list(userId: string, familyId: string) {
-    await this.assertOwner(userId, familyId);
+    await this.assertCanManageInvites(userId, familyId);
     await this.expireOverdue(familyId);
 
     const items = await this.prisma.invitation.findMany({
@@ -108,7 +205,7 @@ export class InvitationsService {
   }
 
   async revoke(userId: string, familyId: string, invitationId: string) {
-    await this.assertOwner(userId, familyId);
+    await this.assertCanManageInvites(userId, familyId);
     const invitation = await this.prisma.invitation.findFirst({
       where: { id: invitationId, familyId },
     });
@@ -306,6 +403,28 @@ export class InvitationsService {
       },
       data: { status: InvitationStatus.expired },
     });
+  }
+
+  private async assertCanManageInvites(userId: string, familyId: string) {
+    const family = await this.prisma.family.findUnique({
+      where: { id: familyId },
+      include: { members: { where: { userId, active: true } } },
+    });
+    if (!family) {
+      throw new NotFoundException('Семейная группа не найдена');
+    }
+    if (family.ownerId === userId) {
+      return;
+    }
+    const member = family.members[0];
+    if (
+      member &&
+      member.type !== MemberType.helper &&
+      member.type !== MemberType.child
+    ) {
+      return;
+    }
+    throw new ForbiddenException('Недостаточно прав для приглашений');
   }
 
   private async assertOwner(userId: string, familyId: string) {
